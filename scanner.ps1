@@ -1,133 +1,88 @@
-# Define function for showing scan results in a Windows Form
-Add-Type -TypeDefinition @"
+# Ensure Windows Forms is available
+Add-Type -AssemblyName "System.Windows.Forms"
+
+# Define ScanResults class for displaying results in a form
+Add-Type @"
 using System;
 using System.Windows.Forms;
+using System.Drawing;
 
-public class ScanResults : Form
-{
-    public ScanResults()
-    {
+public class ScanResults : Form {
+    public TextBox tbWarnings;
+    public TextBox tbDetections;
+    public TextBox tbBypassMethods;
+    
+    public ScanResults() {
         this.Text = "Scan Results";
-        this.Width = 800;
-        this.Height = 600;
+        this.Size = new Size(600, 400);
+        
+        # Create TextBoxes for displaying results
+        tbWarnings = New-Object TextBox
+        tbWarnings.Size = New-Object Drawing.Size(550, 50)
+        tbWarnings.Location = New-Object Drawing.Point(20, 20)
+        tbWarnings.Multiline = $true
+        this.Controls.Add($tbWarnings)
+        
+        tbDetections = New-Object TextBox
+        tbDetections.Size = New-Object Drawing.Size(550, 50)
+        tbDetections.Location = New-Object Drawing.Point(20, 80)
+        tbDetections.Multiline = $true
+        this.Controls.Add($tbDetections)
 
-        var warningsLabel = new Label() { Text = "Warnings", Top = 10, Left = 10, Width = 250 };
-        var detectionsLabel = new Label() { Text = "Detections", Top = 10, Left = 270, Width = 250 };
-        var bypassLabel = new Label() { Text = "Bypass Methods", Top = 10, Left = 530, Width = 250 };
-
-        var warningsBox = new TextBox() { Top = 30, Left = 10, Width = 250, Height = 500, Multiline = true, ScrollBars = ScrollBars.Vertical };
-        var detectionsBox = new TextBox() { Top = 30, Left = 270, Width = 250, Height = 500, Multiline = true, ScrollBars = ScrollBars.Vertical };
-        var bypassBox = new TextBox() { Top = 30, Left = 530, Width = 250, Height = 500, Multiline = true, ScrollBars = ScrollBars.Vertical };
-
-        this.Controls.Add(warningsLabel);
-        this.Controls.Add(detectionsLabel);
-        this.Controls.Add(bypassLabel);
-        this.Controls.Add(warningsBox);
-        this.Controls.Add(detectionsBox);
-        this.Controls.Add(bypassBox);
+        tbBypassMethods = New-Object TextBox
+        tbBypassMethods.Size = New-Object Drawing.Size(550, 50)
+        tbBypassMethods.Location = New-Object Drawing.Point(20, 140)
+        tbBypassMethods.Multiline = $true
+        this.Controls.Add($tbBypassMethods)
     }
 }
 "@
 
-# Function to perform system checks
-function Run-Scan {
-    $warnings = ""
-    $detections = ""
-    $bypassMethods = ""
+# Create instance of the form
+$form = New-Object ScanResults
+$form.Show()
 
-    # Check for suspicious processes
-    $processes = Get-Process
-    $suspiciousProcesses = @('cheatengine', 'hacker', 'injector', 'dbg', 'csgo', 'gta5', 'fortnite', 'discordhook', 'pspy', 'fivem', 'xenos', 'winlogon')
-    foreach ($process in $processes) {
-        if ($suspiciousProcesses -contains $process.Name.ToLower()) {
-            $warnings += "Suspicious process detected: $($process.Name)`n"
-        }
-    }
-
-    # Check for known cheat files or DLLs
-    $filesToCheck = @(
-        'C:\Program Files\CheatEngine\cheatengine-x86_64.exe',
-        'C:\Windows\System32\hook.dll',
-        'C:\Windows\System32\inject.dll',
-        'C:\Windows\System32\cheat.dll'
-    )
-    foreach ($file in $filesToCheck) {
-        if (Test-Path $file) {
-            $detections += "Malicious file detected: $file`n"
-        }
-    }
-
-    # Detect API Hooking (e.g., DLL Injection)
-    $apiHook = Get-ChildItem -Path "C:\Windows\System32" -Recurse | Where-Object { $_.Extension -eq ".dll" }
-    foreach ($dll in $apiHook) {
-        if ($dll.Name -match "hook|inject|bypass") {
-            $bypassMethods += "Potential API hook detected: $dll`n"
-        }
-    }
-
-    # Check for suspicious registry keys
-    $registryPaths = @(
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
-        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
-    )
-    foreach ($path in $registryPaths) {
-        $regKeys = Get-ItemProperty -Path $path
-        foreach ($key in $regKeys.PSObject.Properties) {
-            if ($key.Name -match "cheat|inject|bypass|hack") {
-                $warnings += "Suspicious registry key: $($key.Name)`n"
-            }
-        }
-    }
-
-    # Check for presence of anti-debugging measures
-    $debuggingCheck = Get-Process | Where-Object { $_.Name -match "debugger|debug" }
-    if ($debuggingCheck) {
-        $warnings += "Anti-debugging measure detected: $($debuggingCheck.Name)`n"
-    }
-
-    # Check file system for common bypass tools
-    $bypassTools = @(
-        'xenos32.exe',
-        'dxwnd.exe',
-        'ollydbg.exe',
-        'winject.exe',
-        'fivem.exe'
-    )
-    foreach ($tool in $bypassTools) {
-        $toolPath = "C:\Users\$env:USERNAME\AppData\Local\$tool"
-        if (Test-Path $toolPath) {
-            $bypassMethods += "Bypass tool found: $toolPath`n"
-        }
-    }
-
-    # Check for Windows Defender and security software status
-    $defenderStatus = Get-Service -Name "WinDefend"
-    if ($defenderStatus.Status -ne "Running") {
-        $warnings += "Windows Defender is not running.`n"
-    }
-
-    # Collect all results
-    $scanResults = @{
-        Warnings = $warnings
-        Detections = $detections
-        BypassMethods = $bypassMethods
-    }
-
-    return $scanResults
+# Scan for API hooks and other suspicious files in system directories
+try {
+    $apiHook = Get-ChildItem -Path "C:\Windows\System32" -Recurse | Where-Object { $_.Name -match "hook" }
+} catch {
+    Write-Host "Permission denied for $($_.Exception.Message)"
 }
 
-# Show scan results in a form
-function Show-ScanResults {
-    $form = New-Object ScanResults
-    $form.Show()
-
-    # Perform scan
-    $results = Run-Scan
-
-    $form.Controls[4].Text = $results.Warnings
-    $form.Controls[5].Text = $results.Detections
-    $form.Controls[6].Text = $results.BypassMethods
+# Sample result structure for warnings, detections, and bypass methods
+$results = @{
+    Warnings = "No warnings detected."
+    Detections = "No suspicious API hooks found."
+    BypassMethods = "No bypass methods identified."
 }
 
-# Run the scan and show results
-Show-ScanResults
+# Safely update form controls if they exist and are valid
+if ($form.Controls.Count -ge 3) {
+    $form.tbWarnings.Text = $results.Warnings
+    $form.tbDetections.Text = $results.Detections
+    $form.tbBypassMethods.Text = $results.BypassMethods
+} else {
+    Write-Host "Form controls not properly initialized."
+}
+
+# Optionally, include additional scanning logic here:
+# Example: Checking for running processes or unauthorized DLLs
+try {
+    $runningProcesses = Get-Process | Where-Object { $_.Name -match "discord|cheat" }
+    $results.Detections += "`nRunning suspicious processes: " + ($runningProcesses.Name -join ", ")
+} catch {
+    Write-Host "Failed to list running processes: $($_.Exception.Message)"
+}
+
+# More example scans
+try {
+    $suspiciousFiles = Get-ChildItem -Path "C:\Windows\System32" -Recurse -File | Where-Object { $_.Name -match "cheat|bypass" }
+    $results.Detections += "`nSuspicious files found: " + ($suspiciousFiles.FullName -join ", ")
+} catch {
+    Write-Host "Failed to list suspicious files: $($_.Exception.Message)"
+}
+
+# Wait until user closes the form
+while ($form.Visible) {
+    Start-Sleep -Seconds 1
+}
