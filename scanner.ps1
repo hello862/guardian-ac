@@ -1,134 +1,84 @@
-# Ensure System.Windows.Forms is available
+# Fixed scanner.ps1
+
+# Ensure .NET Forms are available
 Add-Type -AssemblyName System.Windows.Forms
 
-# Function to scan for detections
-function Scan-ForThreats {
+# Function to check for common detections
+function Scan-System {
     $detections = @()
-    $warnings = @()
-    $bypasses = @()
-
-    # Detect Discord Hooking (checks for known hooked DLLs)
-    $discordProcess = Get-Process | Where-Object { $_.ProcessName -match "discord" }
-    if ($discordProcess) {
-        $hookedDLLs = @("discord_hook.dll", "injector.dll")
-        foreach ($dll in $hookedDLLs) {
-            if (Test-Path "$env:APPDATA\Discord\$dll") {
-                $detections += "Discord Hooking: $dll detected"
+    
+    # Check for suspicious processes
+    $suspiciousProcesses = @("CheatEngine", "ProcessHacker", "x64dbg", "ida64", "ida32", "Wireshark")
+    foreach ($proc in Get-Process) {
+        if ($suspiciousProcesses -contains $proc.ProcessName) {
+            $detections += "Suspicious process detected: $($proc.ProcessName)"
+        }
+    }
+    
+    # Check for loaded DLLs related to hooking
+    $suspiciousDLLs = @("ntdll.dll", "kernel32.dll", "user32.dll", "wininet.dll")
+    foreach ($proc in Get-Process) {
+        try {
+            $modules = $proc.Modules | Select-Object ModuleName
+            foreach ($mod in $modules) {
+                if ($suspiciousDLLs -contains $mod.ModuleName) {
+                    $detections += "Potential DLL Hooking in process: $($proc.ProcessName) - $($mod.ModuleName)"
+                }
             }
+        } catch {}
+    }
+    
+    # Check for BAM (Background Activity Moderator) modifications
+    $bamKey = "HKLM:\SYSTEM\CurrentControlSet\Services\BAM\State"
+    if (Test-Path $bamKey) {
+        $bamEntries = Get-ItemProperty -Path $bamKey
+        if ($bamEntries) {
+            $detections += "BAM modifications detected. Possible stealth process hiding."
         }
     }
-
-    # Detect DLL Hijacking (looks for unsigned DLLs in system32)
-    $system32 = "$env:SystemRoot\System32"
-    $dllFiles = Get-ChildItem -Path $system32 -Filter "*.dll"
-    foreach ($dll in $dllFiles) {
-        $signingInfo = Get-AuthenticodeSignature $dll.FullName
-        if ($signingInfo.Status -ne "Valid") {
-            $warnings += "DLL Hijacking: $($dll.Name) is unsigned"
-        }
+    
+    # Check for unplugged USBs (Tampering)
+    $usbDevices = Get-WmiObject Win32_USBControllerDevice | ForEach-Object { $_.Dependent } 
+    if ($usbDevices.Count -eq 0) {
+        $detections += "No USB devices found. Possible USB removal to evade detection."
     }
-
-    # Detect BAM Manipulation (checks registry for modified BAM keys)
-    $bamPath = "HKLM:\SYSTEM\CurrentControlSet\Services\bam\UserSettings"
-    if (Test-Path $bamPath) {
-        $bamEntries = Get-Item -Path $bamPath | Get-ChildItem
-        foreach ($entry in $bamEntries) {
-            if ($entry.Name -match "discord|cheat|injector") {
-                $detections += "BAM Manipulation: Suspicious entry in registry - $($entry.Name)"
-            }
-        }
-    }
-
-    # Detect Journal Tampering (checks if Windows Event logs are cleared)
-    $eventLogs = Get-EventLog -LogName Security -Newest 5 -ErrorAction SilentlyContinue
-    if (-not $eventLogs) {
-        $detections += "Journal Tampering: Security logs missing!"
-    }
-
-    # Detect Unplugged USBs (checks event logs for recent USB disconnects)
-    $usbEvents = Get-WinEvent -LogName System -FilterXPath "*[System[Provider[@Name='Microsoft-Windows-DriverFrameworks-UserMode'] and (EventID=2100)]]" -MaxEvents 5
-    if ($usbEvents) {
-        $warnings += "Unplugged USBs detected!"
-    }
-
-    # Detect Fileless Execution (checks suspicious PowerShell history)
-    $psHistory = Get-Content (Get-PSReadlineOption).HistorySavePath -ErrorAction SilentlyContinue
-    foreach ($cmd in $psHistory) {
-        if ($cmd -match "Invoke-Expression|IEX|[System.Reflection]") {
-            $detections += "Fileless Execution: Suspicious PowerShell command - $cmd"
-        }
-    }
-
-    # Detect Suspicious Processes
-    $badProcesses = @("cheatengine", "x64dbg", "ollydbg", "processhacker")
-    $runningProcesses = Get-Process | Select-Object -ExpandProperty ProcessName
-    foreach ($proc in $badProcesses) {
-        if ($runningProcesses -contains $proc) {
-            $detections += "Suspicious Process: $proc is running"
-        }
-    }
-
-    # Return scan results
-    return @{
-        "Warnings" = $warnings
-        "Detections" = $detections
-        "Bypasses" = $bypasses
-    }
+    
+    return $detections
 }
 
 # Run the scan
-$scanResults = Scan-ForThreats
+$scanResults = Scan-System
 
-# Create the GUI
+# GUI to display scan results
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Guardian Scanner"
-$form.Size = New-Object System.Drawing.Size(600,400)
+$form.Text = "Guardian AC - Scan Results"
+$form.Size = New-Object System.Drawing.Size(500,400)
+$form.StartPosition = "CenterScreen"
 
-# Create Labels
-$warningsLabel = New-Object System.Windows.Forms.Label
-$warningsLabel.Text = "Warnings"
-$warningsLabel.Location = New-Object System.Drawing.Point(50, 20)
-$warningsLabel.AutoSize = $true
+$label = New-Object System.Windows.Forms.Label
+$label.Text = "Scan Results:"
+$label.Location = New-Object System.Drawing.Point(10,10)
+$label.Size = New-Object System.Drawing.Size(480,20)
+$form.Controls.Add($label)
 
-$detectionsLabel = New-Object System.Windows.Forms.Label
-$detectionsLabel.Text = "Detections"
-$detectionsLabel.Location = New-Object System.Drawing.Point(250, 20)
-$detectionsLabel.AutoSize = $true
+$listBox = New-Object System.Windows.Forms.ListBox
+$listBox.Location = New-Object System.Drawing.Point(10,40)
+$listBox.Size = New-Object System.Drawing.Size(460,300)
+$form.Controls.Add($listBox)
 
-$bypassLabel = New-Object System.Windows.Forms.Label
-$bypassLabel.Text = "Bypasses"
-$bypassLabel.Location = New-Object System.Drawing.Point(450, 20)
-$bypassLabel.AutoSize = $true
+if ($scanResults.Count -gt 0) {
+    foreach ($result in $scanResults) {
+        $listBox.Items.Add($result)
+    }
+} else {
+    $listBox.Items.Add("No suspicious activity detected.")
+}
 
-# Create TextBoxes for results
-$warningsBox = New-Object System.Windows.Forms.TextBox
-$warningsBox.Multiline = $true
-$warningsBox.ScrollBars = "Vertical"
-$warningsBox.Size = New-Object System.Drawing.Size(150,300)
-$warningsBox.Location = New-Object System.Drawing.Point(20,50)
-$warningsBox.Text = ($scanResults.Warnings -join "`r`n")
+$closeButton = New-Object System.Windows.Forms.Button
+$closeButton.Text = "Close"
+$closeButton.Location = New-Object System.Drawing.Point(200,350)
+$closeButton.Size = New-Object System.Drawing.Size(100,30)
+$closeButton.Add_Click({ $form.Close() })
+$form.Controls.Add($closeButton)
 
-$detectionsBox = New-Object System.Windows.Forms.TextBox
-$detectionsBox.Multiline = $true
-$detectionsBox.ScrollBars = "Vertical"
-$detectionsBox.Size = New-Object System.Drawing.Size(150,300)
-$detectionsBox.Location = New-Object System.Drawing.Point(220,50)
-$detectionsBox.Text = ($scanResults.Detections -join "`r`n")
-
-$bypassBox = New-Object System.Windows.Forms.TextBox
-$bypassBox.Multiline = $true
-$bypassBox.ScrollBars = "Vertical"
-$bypassBox.Size = New-Object System.Drawing.Size(150,300)
-$bypassBox.Location = New-Object System.Drawing.Point(420,50)
-$bypassBox.Text = ($scanResults.Bypasses -join "`r`n")
-
-# Add elements to the form
-$form.Controls.Add($warningsLabel)
-$form.Controls.Add($detectionsLabel)
-$form.Controls.Add($bypassLabel)
-$form.Controls.Add($warningsBox)
-$form.Controls.Add($detectionsBox)
-$form.Controls.Add($bypassBox)
-
-# Show form
 $form.ShowDialog()
